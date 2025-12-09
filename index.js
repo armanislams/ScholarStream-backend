@@ -3,10 +3,10 @@ const cors = require("cors");
 const app = express();
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-const stripe = require("stripe")(process.env.STRIPE_SECRET);
+// const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
-const crypto = require("crypto");
-const admin = require("firebase-admin");
+// const crypto = require("crypto");
+// const admin = require("firebase-admin");
 
 //middleware
 app.use(express.json());
@@ -41,76 +41,157 @@ const client = new MongoClient(uri, {
 });
 
 async function run() {
-    // Connect the client to the server	(optional starting in v4.7)
-    client.connect();
-     const db = client.db("scholar-stream");
-    const userCollection = db.collection("users");
+  // Connect the client to the server	(optional starting in v4.7)
+  client.connect();
+  const db = client.db("scholar-stream");
+  const userCollection = db.collection("users");
+  const scholarshipsCollection = db.collection("scholarships");
+
+  ///users
+  app.post("/users", async (req, res) => {
+    const user = req.body;
+    user.role = "student";
+    user.createdAt = new Date();
+    const email = user.email;
+    const userExist = await userCollection.findOne({ email });
+    if (userExist) {
+      return res.send({ message: "user exist" });
+    }
+    const result = await userCollection.insertOne(user);
+    res.send(result);
+  });
+
+  app.get("/users", async (req, res) => {
+    const searchText = req.query.searchText;
+    const query = {};
+    if (searchText) {
+      query.$or = [
+        { displayName: { $regex: searchText, $options: "i" } },
+        { email: { $regex: searchText, $options: "i" } },
+      ];
+    }
+    const result = await userCollection
+      .find(query)
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.send(result);
+  });
+
+  // app.get("/users/:id", async (req, res) => {});
+
+  app.get("/users/:email/role", async (req, res) => {
+    const email = req.params.email;
+    const query = { email };
+    const user = await userCollection.findOne(query);
+    res.send({ role: user?.role || "user" });
+  });
+
+  app.patch("/users/:id/role", async (req, res) => {
+    const id = req.params.id;
+    const roleInfo = req.body;
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: {
+        role: roleInfo.role,
+      },
+    };
+    const result = await userCollection.updateOne(query, updateDoc);
+    res.send(result);
+  });
+
+  // scholarship api
+  app.get("/scholarships", async (req, res) => {
+    const searchText = req.query.searchText;
+    const { email, scholarshipCategory, subjectCategory, universityCountry, page = 1, limit = 12 } = req.query;
+
+    let query = {};
+    const filterConditions = [];
+
+    // Search functionality (OR condition across multiple fields)
+    if (searchText) {
+      filterConditions.push({
+        $or: [
+          { scholarshipName: { $regex: searchText, $options: "i" } },
+          { universityName: { $regex: searchText, $options: "i" } },
+          { degree: { $regex: searchText, $options: "i" } },
+          { subjectCategory: { $regex: searchText, $options: "i" } },
+          { scholarshipCategory: { $regex: searchText, $options: "i" } },
+          { universityCountry: { $regex: searchText, $options: "i" } },
+        ]
+      });
+    }
+
+    // Filter by scholarship category (exact match)
+    if (scholarshipCategory) {
+      filterConditions.push({ scholarshipCategory: scholarshipCategory });
+    }
+
+    // Filter by subject category (exact match)
+    if (subjectCategory) {
+      filterConditions.push({ subjectCategory: subjectCategory });
+    }
+
+    // Filter by university country/location (exact match)
+    if (universityCountry) {
+      filterConditions.push({ universityCountry: universityCountry });
+    }
+
+    // Scholarship by email
+    if (email) {
+      filterConditions.push({ senderEmail: email });
+    }
+
+    // Combine all conditions with AND logic
+    if (filterConditions.length > 0) {
+      query.$and = filterConditions;
+    }
+
+    // Pagination calculations
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
+
+    // Get total count for pagination
+    const totalCount = await scholarshipsCollection.countDocuments(query);
+
+    // Get paginated results
+    const options = { sort: { createdAt: -1 } };
+    const result = await scholarshipsCollection
+      .find(query, options)
+      .skip(skip)
+      .limit(limitNum)
+      .toArray();
+
+    // Send response with pagination metadata
+    res.send({
+      data: result,
+      totalCount: totalCount,
+      totalPages: Math.ceil(totalCount / limitNum),
+      currentPage: pageNum,
+      pageSize: limitNum
+    });
+  });
     
+    app.get('/scholarships/top', async (req, res) => {
+        const result = await scholarshipsCollection
+          .find()
+          .sort({ scholarshipPostDate: -1 })
+          .limit(6)
+          .toArray();
+        res.send(result)
 
-    ///users
-         app.post("/users", async (req, res) => {
-              const user = req.body;
-              user.role = "user";
-              user.createdAt = new Date();
-              const email = user.email;
-              const userExist = await userCollection.findOne({ email });
-              if (userExist) {
-                return res.send({ message: "user exist" });
-              }
-              const result = await userCollection.insertOne(user);
-              res.send(result);
-            });
-        
-            app.get("/users", async (req, res) => {
-              const searchText = req.query.searchText;
-              const query = {};
-              if (searchText) {
-                query.$or = [
-                  { displayName: { $regex: searchText, $options: "i" } },
-                  { email: { $regex: searchText, $options: "i" } },
-                ];
-              }
-              const result = await userCollection.find(query).sort({ createdAt: -1 }).toArray();
-              res.send(result);
-            });
-        
-            // app.get("/users/:id", async (req, res) => {});
-        
-            app.get("/users/:email/role",async (req, res) => {
-                const email = req.params.email;
-                const query = { email };
-                const user = await userCollection.findOne(query);
-                res.send({ role: user?.role || "user" });
-              }
-            );
-        
-            app.patch("/users/:id/role",async (req, res) => {
-                const id = req.params.id;
-                const roleInfo = req.body;
-                const query = { _id: new ObjectId(id) };
-                const updateDoc = {
-                  $set: {
-                    role: roleInfo.role,
-                  },
-                };
-                const result = await userCollection.updateOne(query, updateDoc);
-                res.send(result);
-              }
-            );
-        
+    })
 
+  app.get("/scholarships/:id", async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await scholarshipsCollection.findOne(query);
+    res.send(result);
+  });
 
-
-
-
-
-
-
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
-    );
+  // Send a ping to confirm a successful connection
+  await client.db("admin").command({ ping: 1 });
+  console.log("Pinged your deployment. You successfully connected to MongoDB!");
 }
 run().catch(console.dir);
 
