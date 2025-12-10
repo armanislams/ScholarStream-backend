@@ -3,7 +3,7 @@ const cors = require("cors");
 const app = express();
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
-// const stripe = require("stripe")(process.env.STRIPE_SECRET);
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 const crypto = require("crypto");
 // const admin = require("firebase-admin");
@@ -55,6 +55,8 @@ async function run() {
   const userCollection = db.collection("users");
   const scholarshipsCollection = db.collection("scholarships");
   const applicationsCollection = db.collection("applications");
+  const paymentCollection = db.collection("payments");
+
 
   ///users
   app.post("/users", async (req, res) => {
@@ -229,6 +231,108 @@ async function run() {
     res.send(result);
   });
 
+  // scholarship payment checkout API
+  app.post("/scholarship-payment-checkout", async (req, res) => {
+    const paymentInfo = req.body
+    console.log(paymentInfo);
+
+    const payment = parseInt(paymentInfo.charge) * 100;
+    const session = await stripe.checkout.sessions.create({
+      line_items: [
+        {
+          // Provide the exact Price ID (for example, price_1234) of the product you want to sell
+          price_data: {
+            currency: "USD",
+            unit_amount: payment,
+            product_data: {
+              name: paymentInfo.universityName,
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      mode: "payment",
+      customer_email: paymentInfo.studentEmail,
+      metadata: {
+        universityName: paymentInfo.universityName,
+        scholarshipId: paymentInfo.scholarshipId,
+        applicationId: paymentInfo.applicationId,
+      },
+      success_url: `${process.env.SITE_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${process.env.SITE_URL}/payment-cancelled`,
+    });
+    console.log(session);
+    res.send({ url: session.url });
+  });
+  app.patch("/payment-success", async (req, res) => {
+    const sessionId = req.query.session_id;
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    // console.log('session retrieve', session);
+
+    const transactionId = session.payment_intent;
+    const query = {
+      transactionId: transactionId,
+    };
+    const paymentExist = await paymentCollection.findOne(query);
+
+    if (paymentExist) {
+      return res.send({
+        message: "already exist",
+      });
+    }
+
+    if (session.payment_status === "paid") {
+      const applicationId = session.metadata.applicationId;
+      const query = { _id: new ObjectId(applicationId) };
+      const update = {
+        $set: {
+          paymentStatus: "paid",
+        },
+      };
+      const result = await applicationsCollection.updateOne(query, update);
+      const payment = {
+        amount: session.amount_total / 100,
+        email: session.customer_email,
+        scholarshipId: session.metadata.scholarshipId,
+        universityName: session.metadata.universityName,
+        transactionId: session.payment_intent,
+        paymentStatus: session.payment_status,
+        paidAt: new Date(),
+      };
+      const resultPayment = await paymentCollection.insertOne(payment);
+
+    //   console.log(resultPayment);
+      return res.send({
+        success: true,
+        result,
+          payment,
+        resultPayment,
+      });
+
+
+    }
+    return res.send({ success: false });
+  });
+
+
+  app.get("/payments", async (req, res) => {
+    //    const email = req.query.email;
+    //    // console.log('headers',req.headers);
+    //    const query = {};
+
+    //    if (email) {
+    //      query.email = email;
+    //      //check email
+    //      if (email !== req.decoded_email) {
+    //        console.log("payment history api", req.decoded_email);
+    //        return res.status(403).send({ message: "forbidden access" });
+    //      }
+    //    }
+    //    const options = { sort: { paidAt: -1 } };
+    const cursor = paymentCollection.find();
+    const result = await cursor.toArray();
+    res.send(result);
+  });
   // Send a ping to confirm a successful connection
   await client.db("admin").command({ ping: 1 });
   console.log("Pinged your deployment. You successfully connected to MongoDB!");
@@ -236,7 +340,7 @@ async function run() {
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
-  res.send("ZapShift Server");
+  res.send("Scholar Stream Server");
 });
 
 app.listen(port, () => {
