@@ -5,12 +5,20 @@ require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 // const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
-// const crypto = require("crypto");
+const crypto = require("crypto");
 // const admin = require("firebase-admin");
 
 //middleware
 app.use(express.json());
 app.use(cors());
+
+//userID
+function generateUserId() {
+  const prefix = "SS";
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); //YYYYMMDD
+  const random = crypto.randomBytes(1).toString("hex").toUpperCase(); //6-char random hex
+  return `${prefix}-${date}-${random}`;
+}
 
 //verify user
 const verifyFirebaseToken = async (req, res, next) => {
@@ -46,6 +54,7 @@ async function run() {
   const db = client.db("scholar-stream");
   const userCollection = db.collection("users");
   const scholarshipsCollection = db.collection("scholarships");
+  const applicationsCollection = db.collection("applications");
 
   ///users
   app.post("/users", async (req, res) => {
@@ -77,7 +86,13 @@ async function run() {
     res.send(result);
   });
 
-  // app.get("/users/:id", async (req, res) => {});
+  app.get("/users/:email", async (req, res) => {
+    const email = req.params.email;
+    const query = { email };
+    const result = await userCollection.findOne(query);
+    res.send(result);
+    // console.log(result);
+  });
 
   app.get("/users/:email/role", async (req, res) => {
     const email = req.params.email;
@@ -102,7 +117,14 @@ async function run() {
   // scholarship api
   app.get("/scholarships", async (req, res) => {
     const searchText = req.query.searchText;
-    const { email, scholarshipCategory, subjectCategory, universityCountry, page = 1, limit = 12 } = req.query;
+    const {
+      email,
+      scholarshipCategory,
+      subjectCategory,
+      universityCountry,
+      page = 1,
+      limit = 12,
+    } = req.query;
 
     let query = {};
     const filterConditions = [];
@@ -117,7 +139,7 @@ async function run() {
           { subjectCategory: { $regex: searchText, $options: "i" } },
           { scholarshipCategory: { $regex: searchText, $options: "i" } },
           { universityCountry: { $regex: searchText, $options: "i" } },
-        ]
+        ],
       });
     }
 
@@ -168,24 +190,42 @@ async function run() {
       totalCount: totalCount,
       totalPages: Math.ceil(totalCount / limitNum),
       currentPage: pageNum,
-      pageSize: limitNum
+      pageSize: limitNum,
     });
   });
-    
-    app.get('/scholarships/top', async (req, res) => {
-        const result = await scholarshipsCollection
-          .find()
-          .sort({ scholarshipPostDate: -1 })
-          .limit(6)
-          .toArray();
-        res.send(result)
 
-    })
+  app.get("/scholarships/top", async (req, res) => {
+    const result = await scholarshipsCollection
+      .find()
+      .sort({ scholarshipPostDate: -1 })
+      .limit(6)
+      .toArray();
+    res.send(result);
+  });
 
   app.get("/scholarships/:id", async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     const result = await scholarshipsCollection.findOne(query);
+    res.send(result);
+  });
+
+  app.post("/apply-scholarships", async (req, res) => {
+    const applicationData = req.body;
+    const userId = generateUserId();
+    applicationData.userId = userId;
+    applicationData.applicationDate = new Date();
+    const result = await applicationsCollection.insertOne(applicationData);
+    res.send(result);
+  });
+  app.get("/applications", async (req, res) => {
+    const result = await applicationsCollection.find().toArray();
+    res.send(result);
+  });
+  app.get("/applied-scholarships/:email", async (req, res) => {
+    const email = req.params.email;
+    const query = { userEmail: email };
+    const result = await applicationsCollection.find(query).toArray();
     res.send(result);
   });
 
