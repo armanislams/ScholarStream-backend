@@ -303,9 +303,7 @@ async function run() {
     const result = await applicationsCollection.find().toArray();
     res.send(result);
   });
-  app.get(
-    "/applied-scholarships/:email",
-    verifyFirebaseToken,
+  app.get("/applied-scholarships/:email",verifyFirebaseToken,
     async (req, res) => {
       const email = req.params.email;
       const query = { userEmail: email };
@@ -347,7 +345,7 @@ async function run() {
     console.log(session);
     res.send({ url: session.url });
   });
-  app.patch("/payment-success", async (req, res) => {
+  app.patch("/payment-success",verifyFirebaseToken, async (req, res) => {
     const sessionId = req.query.session_id;
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     // console.log('session retrieve', session);
@@ -482,7 +480,8 @@ async function run() {
 
   app.get(
     "/analytics/moderator-stats",
-    verifyFirebaseToken,
+      verifyFirebaseToken,
+    verifyModerator,
     async (req, res) => {
       const applications = await applicationsCollection.find().toArray();
       const stats = {
@@ -535,7 +534,7 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/reviews/scholarship/:scholarshipId", async (req, res) => {
+  app.get("/reviews/scholarship/:scholarshipId",verifyFirebaseToken, async (req, res) => {
     const scholarshipId = req.params.scholarshipId;
     const query = { scholarshipId: scholarshipId };
     const result = await reviewsCollection.find(query).toArray();
@@ -568,9 +567,9 @@ async function run() {
     res.send(result);
   });
 
-  // Send a ping to confirm a successful connection
-  await client.db("admin").command({ ping: 1 });
-  console.log("Pinged your deployment. You successfully connected to MongoDB!");
+//   // Send a ping to confirm a successful connection
+//   await client.db("admin").command({ ping: 1 });
+//   console.log("Pinged your deployment. You successfully connected to MongoDB!");
 }
 run().catch(console.dir);
 
