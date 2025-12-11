@@ -384,19 +384,18 @@ async function run() {
   });
 
   app.get("/payments", verifyFirebaseToken, async (req, res) => {
-    //    const email = req.query.email;
-    //    // console.log('headers',req.headers);
-    //    const query = {};
+       const email = req.query.email;
+       // console.log('headers',req.headers);
+       const query = {};
 
-    //    if (email) {
-    //      query.email = email;
-    //      //check email
-    //      if (email !== req.decoded_email) {
-    //        console.log("payment history api", req.decoded_email);
-    //        return res.status(403).send({ message: "forbidden access" });
-    //      }
-    //    }
-    //    const options = { sort: { paidAt: -1 } };
+       if (email) {
+         query.email = email;
+         //check email
+         if (email !== req.decoded_email) {
+           return res.status(403).send({ message: "forbidden access" });
+         }
+       }
+       const options = { sort: { paidAt: -1 } };
     const cursor = paymentCollection.find();
     const result = await cursor.toArray();
     res.send(result);
@@ -452,16 +451,20 @@ async function run() {
     verifyFirebaseToken,
     verifyAdmin,
     async (req, res) => {
-      const result = await applicationsCollection.aggregate([
-        {
-          $group: {
-            _id: "$subjectCategory",
-            count: { $sum: 1 }
-          }
-        }
-      ]).toArray();
+      const result = await applicationsCollection
+        .aggregate([
+          {
+            $group: {
+              _id: "$scholarshipCategory",
+              count: { $sum: 1 },
+            },
+          },
+        ])
+        .toArray();
       const formatted = result.map(item => ({ name: item._id || 'Unknown', value: item.count }));
-      res.send(formatted);
+        res.send(formatted);
+        console.log(result);
+        
     }
   );
 
