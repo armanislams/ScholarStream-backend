@@ -6,7 +6,17 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 const crypto = require("crypto");
-// const admin = require("firebase-admin");
+
+///FIREBASE SERVICE ACCOUNT 
+const admin = require("firebase-admin");
+const decoded = Buffer.from(process.env.FIREBASE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 //middleware
 app.use(express.json());
@@ -33,6 +43,8 @@ const verifyFirebaseToken = async (req, res, next) => {
     req.decoded_email = decoded.email;
     next();
   } catch (err) {
+    console.log(err);
+
     return res.status(401).send({ message: "unauthorized access" });
   }
 };
@@ -58,6 +70,7 @@ async function run() {
   const paymentCollection = db.collection("payments");
   const reviewsCollection = db.collection("reviews");
 
+ 
 
   ///users
   app.post("/users", async (req, res) => {
@@ -89,7 +102,7 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/users/:email", async (req, res) => {
+  app.get("/users/:email", verifyFirebaseToken, async (req, res) => {
     const email = req.params.email;
     const query = { email };
     const result = await userCollection.findOne(query);
@@ -97,14 +110,14 @@ async function run() {
     // console.log(result);
   });
 
-  app.get("/users/:email/role", async (req, res) => {
+  app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
     const email = req.params.email;
     const query = { email };
     const user = await userCollection.findOne(query);
     res.send({ role: user?.role || "user" });
   });
 
-  app.patch("/users/:id/role", async (req, res) => {
+  app.patch("/users/:id/role", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
     const roleInfo = req.body;
     const query = { _id: new ObjectId(id) };
@@ -118,7 +131,7 @@ async function run() {
   });
 
   // scholarship api
-  app.get("/scholarships", async (req, res) => {
+  app.get("/scholarships", verifyFirebaseToken, async (req, res) => {
     const searchText = req.query.searchText;
     const {
       email,
@@ -206,14 +219,14 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/scholarships/:id", async (req, res) => {
+  app.get("/scholarships/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     const result = await scholarshipsCollection.findOne(query);
     res.send(result);
   });
 
-  app.post("/apply-scholarships", async (req, res) => {
+  app.post("/apply-scholarships", verifyFirebaseToken, async (req, res) => {
     const applicationData = req.body;
     const userId = generateUserId();
     applicationData.userId = userId;
@@ -221,20 +234,24 @@ async function run() {
     const result = await applicationsCollection.insertOne(applicationData);
     res.send(result);
   });
-  app.get("/applications", async (req, res) => {
+  app.get("/applications", verifyFirebaseToken, async (req, res) => {
     const result = await applicationsCollection.find().toArray();
     res.send(result);
   });
-  app.get("/applied-scholarships/:email", async (req, res) => {
-    const email = req.params.email;
-    const query = { userEmail: email };
-    const result = await applicationsCollection.find(query).toArray();
-    res.send(result);
-  });
+  app.get(
+    "/applied-scholarships/:email",
+    verifyFirebaseToken,
+    async (req, res) => {
+      const email = req.params.email;
+      const query = { userEmail: email };
+      const result = await applicationsCollection.find(query).toArray();
+      res.send(result);
+    }
+  );
 
   // scholarship payment checkout API
   app.post("/scholarship-payment-checkout", async (req, res) => {
-    const paymentInfo = req.body
+    const paymentInfo = req.body;
     console.log(paymentInfo);
 
     const payment = parseInt(paymentInfo.charge) * 100;
@@ -309,14 +326,11 @@ async function run() {
         payment,
         resultPayment,
       });
-
-
     }
     return res.send({ success: false });
   });
 
-
-  app.get("/payments", async (req, res) => {
+  app.get("/payments", verifyFirebaseToken, async (req, res) => {
     //    const email = req.query.email;
     //    // console.log('headers',req.headers);
     //    const query = {};
@@ -335,7 +349,7 @@ async function run() {
     res.send(result);
   });
   // Analytics
-  app.get("/analytics/admin-stats", async (req, res) => {
+  app.get("/analytics/admin-stats", verifyFirebaseToken, verifyAdmin, async (req, res) => {
     const totalUsers = await userCollection.countDocuments();
     const totalScholarships = await scholarshipsCollection.countDocuments();
     const totalApplications = await applicationsCollection.countDocuments();
@@ -347,45 +361,108 @@ async function run() {
     res.send({ totalUsers, totalScholarships, totalApplications, totalFees });
   });
 
-  app.get("/analytics/student-stats/:email", async (req, res) => {
-    const email = req.params.email;
-    const applications = await applicationsCollection
-      .find({ userEmail: email })
-      .toArray();
+  app.get(
+    "/analytics/student-stats/:email",
+    verifyFirebaseToken,
+    async (req, res) => {
+      const email = req.params.email;
+      const applications = await applicationsCollection
+        .find({ userEmail: email })
+        .toArray();
 
-    const stats = {
-      totalApplied: applications.length,
-      pending: applications.filter(
-        (app) => !app.applicationStatus || app.applicationStatus === "pending"
-      ).length,
-      processing: applications.filter(
-        (app) => app.applicationStatus === "processing"
-      ).length,
-      completed: applications.filter(
-        (app) => app.applicationStatus === "completed"
-      ).length,
-      rejected: applications.filter(
-        (app) => app.applicationStatus === "rejected"
-      ).length,
-    };
-    res.send(stats);
+      const stats = {
+        totalApplied: applications.length,
+        pending: applications.filter(
+          (app) => !app.applicationStatus || app.applicationStatus === "pending"
+        ).length,
+        processing: applications.filter(
+          (app) => app.applicationStatus === "processing"
+        ).length,
+        completed: applications.filter(
+          (app) => app.applicationStatus === "completed"
+        ).length,
+        rejected: applications.filter(
+          (app) => app.applicationStatus === "rejected"
+        ).length,
+      };
+      res.send(stats);
+    }
+  );
+
+  app.get(
+    "/analytics/moderator-stats",
+    verifyFirebaseToken,
+    async (req, res) => {
+      const applications = await applicationsCollection.find().toArray();
+      const stats = {
+        totalApplied: applications.length,
+        pending: applications.filter(
+          (app) => !app.applicationStatus || app.applicationStatus === "pending"
+        ).length,
+        processing: applications.filter(
+          (app) => app.applicationStatus === "processing"
+        ).length,
+        completed: applications.filter(
+          (app) => app.applicationStatus === "completed"
+        ).length,
+      };
+      res.send(stats);
+    }
+  );
+
+  // Application Management
+  app.delete("/applications/:id", verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await applicationsCollection.deleteOne(query);
+    res.send(result);
   });
 
-  app.get("/analytics/moderator-stats", async (req, res) => {
-    const applications = await applicationsCollection.find().toArray();
-    const stats = {
-      totalApplied: applications.length,
-      pending: applications.filter(
-        (app) => !app.applicationStatus || app.applicationStatus === "pending"
-      ).length,
-      processing: applications.filter(
-        (app) => app.applicationStatus === "processing"
-      ).length,
-      completed: applications.filter(
-        (app) => app.applicationStatus === "completed"
-      ).length,
+  app.patch("/applications/:id", verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+    const data = req.body;
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: data
     };
-    res.send(stats);
+    const result = await applicationsCollection.updateOne(query, updateDoc);
+    res.send(result);
+  });
+
+  // Reviews
+  app.post("/reviews", verifyFirebaseToken, async (req, res) => {
+    const review = req.body;
+    review.createdAt = new Date();
+    const result = await reviewsCollection.insertOne(review);
+    res.send(result);
+  });
+
+  app.get("/reviews/:email", verifyFirebaseToken, async (req, res) => {
+    const email = req.params.email;
+    const query = { userEmail: email };
+    const result = await reviewsCollection.find(query).toArray();
+    res.send(result);
+  });
+
+  app.delete("/reviews/:id", verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await reviewsCollection.deleteOne(query);
+    res.send(result);
+  });
+
+  app.patch("/reviews/:id", verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+    const review = req.body;
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: {
+        ratingPoint: review.ratingPoint,
+        reviewComment: review.reviewComment
+      }
+    };
+    const result = await reviewsCollection.updateOne(query, updateDoc);
+    res.send(result);
   });
 
   // Send a ping to confirm a successful connection
