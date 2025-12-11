@@ -56,6 +56,7 @@ async function run() {
   const scholarshipsCollection = db.collection("scholarships");
   const applicationsCollection = db.collection("applications");
   const paymentCollection = db.collection("payments");
+  const reviewsCollection = db.collection("reviews");
 
 
   ///users
@@ -301,11 +302,11 @@ async function run() {
       };
       const resultPayment = await paymentCollection.insertOne(payment);
 
-    //   console.log(resultPayment);
+      //   console.log(resultPayment);
       return res.send({
         success: true,
         result,
-          payment,
+        payment,
         resultPayment,
       });
 
@@ -333,6 +334,60 @@ async function run() {
     const result = await cursor.toArray();
     res.send(result);
   });
+  // Analytics
+  app.get("/analytics/admin-stats", async (req, res) => {
+    const totalUsers = await userCollection.countDocuments();
+    const totalScholarships = await scholarshipsCollection.countDocuments();
+    const totalApplications = await applicationsCollection.countDocuments();
+    const totalPayments = await paymentCollection
+      .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+      .toArray();
+    const totalFees = totalPayments.length > 0 ? totalPayments[0].total : 0;
+
+    res.send({ totalUsers, totalScholarships, totalApplications, totalFees });
+  });
+
+  app.get("/analytics/student-stats/:email", async (req, res) => {
+    const email = req.params.email;
+    const applications = await applicationsCollection
+      .find({ userEmail: email })
+      .toArray();
+
+    const stats = {
+      totalApplied: applications.length,
+      pending: applications.filter(
+        (app) => !app.applicationStatus || app.applicationStatus === "pending"
+      ).length,
+      processing: applications.filter(
+        (app) => app.applicationStatus === "processing"
+      ).length,
+      completed: applications.filter(
+        (app) => app.applicationStatus === "completed"
+      ).length,
+      rejected: applications.filter(
+        (app) => app.applicationStatus === "rejected"
+      ).length,
+    };
+    res.send(stats);
+  });
+
+  app.get("/analytics/moderator-stats", async (req, res) => {
+    const applications = await applicationsCollection.find().toArray();
+    const stats = {
+      totalApplied: applications.length,
+      pending: applications.filter(
+        (app) => !app.applicationStatus || app.applicationStatus === "pending"
+      ).length,
+      processing: applications.filter(
+        (app) => app.applicationStatus === "processing"
+      ).length,
+      completed: applications.filter(
+        (app) => app.applicationStatus === "completed"
+      ).length,
+    };
+    res.send(stats);
+  });
+
   // Send a ping to confirm a successful connection
   await client.db("admin").command({ ping: 1 });
   console.log("Pinged your deployment. You successfully connected to MongoDB!");
