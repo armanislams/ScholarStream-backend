@@ -448,6 +448,24 @@ async function run() {
   );
 
   app.get(
+    "/analytics/chart-data",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const result = await applicationsCollection.aggregate([
+        {
+          $group: {
+            _id: "$subjectCategory",
+            count: { $sum: 1 }
+          }
+        }
+      ]).toArray();
+      const formatted = result.map(item => ({ name: item._id || 'Unknown', value: item.count }));
+      res.send(formatted);
+    }
+  );
+
+  app.get(
     "/analytics/moderator-stats",
     verifyFirebaseToken,
     async (req, res) => {
