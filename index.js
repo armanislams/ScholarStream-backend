@@ -222,7 +222,19 @@ async function run() {
     const totalCount = await scholarshipsCollection.countDocuments(query);
 
     // Get paginated results
-    const options = { sort: { createdAt: -1 } };
+    // Sorting
+    let sortOptions = { createdAt: -1 };
+    if (req.query.sortType === "feesAsc") {
+      sortOptions = { applicationFees: 1 };
+    } else if (req.query.sortType === "feesDesc") {
+      sortOptions = { applicationFees: -1 };
+    } else if (req.query.sortType === "dateAsc") {
+      sortOptions = { scholarshipPostDate: 1 };
+    } else if (req.query.sortType === "dateDesc") {
+      sortOptions = { scholarshipPostDate: -1 };
+    }
+
+    const options = { sort: sortOptions };
     const result = await scholarshipsCollection
       .find(query, options)
       .skip(skip)
@@ -384,18 +396,18 @@ async function run() {
   });
 
   app.get("/payments", verifyFirebaseToken, async (req, res) => {
-       const email = req.query.email;
-       // console.log('headers',req.headers);
-       const query = {};
+    const email = req.query.email;
+    // console.log('headers',req.headers);
+    const query = {};
 
-       if (email) {
-         query.email = email;
-         //check email
-         if (email !== req.decoded_email) {
-           return res.status(403).send({ message: "forbidden access" });
-         }
-       }
-       const options = { sort: { paidAt: -1 } };
+    if (email) {
+      query.email = email;
+      //check email
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    }
+    const options = { sort: { paidAt: -1 } };
     const cursor = paymentCollection.find();
     const result = await cursor.toArray();
     res.send(result);
@@ -462,9 +474,9 @@ async function run() {
         ])
         .toArray();
       const formatted = result.map(item => ({ name: item._id || 'Unknown', value: item.count }));
-        res.send(formatted);
-        console.log(result);
-        
+      res.send(formatted);
+      console.log(result);
+
     }
   );
 
@@ -519,6 +531,13 @@ async function run() {
   app.get("/reviews/:email", verifyFirebaseToken, async (req, res) => {
     const email = req.params.email;
     const query = { userEmail: email };
+    const result = await reviewsCollection.find(query).toArray();
+    res.send(result);
+  });
+
+  app.get("/reviews/scholarship/:scholarshipId", async (req, res) => {
+    const scholarshipId = req.params.scholarshipId;
+    const query = { scholarshipId: scholarshipId };
     const result = await reviewsCollection.find(query).toArray();
     res.send(result);
   });
