@@ -70,7 +70,19 @@ async function run() {
   const paymentCollection = db.collection("payments");
   const reviewsCollection = db.collection("reviews");
 
- 
+  //verify user roles
+  const verifyAdmin = async (req, res, next) => {
+    const allowedRoles = ["admin", "super-admin"];
+    const email = req.decoded_email;
+    const query = { email };
+    const user = await userCollection.findOne(query);
+    if (!user || !allowedRoles.includes(user.role)) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+
+    next();
+  };
+  
 
   ///users
   app.post("/users", async (req, res) => {
@@ -349,17 +361,22 @@ async function run() {
     res.send(result);
   });
   // Analytics
-  app.get("/analytics/admin-stats", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-    const totalUsers = await userCollection.countDocuments();
-    const totalScholarships = await scholarshipsCollection.countDocuments();
-    const totalApplications = await applicationsCollection.countDocuments();
-    const totalPayments = await paymentCollection
-      .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
-      .toArray();
-    const totalFees = totalPayments.length > 0 ? totalPayments[0].total : 0;
+  app.get(
+    "/analytics/admin-stats",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const totalUsers = await userCollection.countDocuments();
+      const totalScholarships = await scholarshipsCollection.countDocuments();
+      const totalApplications = await applicationsCollection.countDocuments();
+      const totalPayments = await paymentCollection
+        .aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }])
+        .toArray();
+      const totalFees = totalPayments.length > 0 ? totalPayments[0].total : 0;
 
-    res.send({ totalUsers, totalScholarships, totalApplications, totalFees });
-  });
+      res.send({ totalUsers, totalScholarships, totalApplications, totalFees });
+    }
+  );
 
   app.get(
     "/analytics/student-stats/:email",
@@ -423,7 +440,7 @@ async function run() {
     const data = req.body;
     const query = { _id: new ObjectId(id) };
     const updateDoc = {
-      $set: data
+      $set: data,
     };
     const result = await applicationsCollection.updateOne(query, updateDoc);
     res.send(result);
@@ -458,8 +475,8 @@ async function run() {
     const updateDoc = {
       $set: {
         ratingPoint: review.ratingPoint,
-        reviewComment: review.reviewComment
-      }
+        reviewComment: review.reviewComment,
+      },
     };
     const result = await reviewsCollection.updateOne(query, updateDoc);
     res.send(result);
