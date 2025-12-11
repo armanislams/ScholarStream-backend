@@ -82,7 +82,17 @@ async function run() {
 
     next();
   };
-  
+  const verifyModerator = async (req, res, next) => {
+    const allowedRoles = ["moderator", "super-admin"];
+    const email = req.decoded_email;
+    const query = { email };
+    const user = await userCollection.findOne(query);
+    if (!user || !allowedRoles.includes(user.role)) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+
+    next();
+  };
 
   ///users
   app.post("/users", async (req, res) => {
