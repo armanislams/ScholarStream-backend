@@ -152,6 +152,13 @@ async function run() {
     res.send(result);
   });
 
+  app.delete("/users/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await userCollection.deleteOne(query);
+    res.send(result);
+  });
+
   // scholarship api
   app.get("/scholarships", verifyFirebaseToken, async (req, res) => {
     const searchText = req.query.searchText;
@@ -245,6 +252,30 @@ async function run() {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     const result = await scholarshipsCollection.findOne(query);
+    res.send(result);
+  });
+
+  app.post("/scholarships", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+    const scholarship = req.body;
+    scholarship.createdAt = new Date();
+    scholarship.scholarshipPostDate = new Date();
+    const result = await scholarshipsCollection.insertOne(scholarship);
+    res.send(result);
+  });
+
+  app.patch("/scholarships/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+    const id = req.params.id;
+    const scholarship = req.body;
+    const query = { _id: new ObjectId(id) };
+    const updateDoc = { $set: scholarship };
+    const result = await scholarshipsCollection.updateOne(query, updateDoc);
+    res.send(result);
+  });
+
+  app.delete("/scholarships/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await scholarshipsCollection.deleteOne(query);
     res.send(result);
   });
 
@@ -468,6 +499,11 @@ async function run() {
     const email = req.params.email;
     const query = { userEmail: email };
     const result = await reviewsCollection.find(query).toArray();
+    res.send(result);
+  });
+
+  app.get("/all-reviews", verifyFirebaseToken, verifyModerator, async (req, res) => {
+    const result = await reviewsCollection.find().toArray();
     res.send(result);
   });
 
