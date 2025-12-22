@@ -348,7 +348,7 @@ async function run() {
     console.log(session);
     res.send({ url: session.url });
   });
-  app.patch("/payment-success", verifyFirebaseToken, async (req, res) => {
+  app.patch("/payment-success", async (req, res) => {
     const sessionId = req.query.session_id;
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     // console.log('session retrieve', session);
