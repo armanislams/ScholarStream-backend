@@ -7,7 +7,7 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 const crypto = require("crypto");
 
-///FIREBASE SERVICE ACCOUNT 
+///FIREBASE SERVICE ACCOUNT
 const admin = require("firebase-admin");
 const decoded = Buffer.from(process.env.FIREBASE_KEY, "base64").toString(
   "utf8"
@@ -39,11 +39,11 @@ const verifyFirebaseToken = async (req, res, next) => {
   try {
     const idToken = token.split(" ")[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
-    // console.log('decoded token', decoded);
+    // ('decoded token', decoded);
     req.decoded_email = decoded.email;
     next();
   } catch (err) {
-    console.log(err);
+    err;
 
     return res.status(401).send({ message: "unauthorized access" });
   }
@@ -129,7 +129,7 @@ async function run() {
     const query = { email };
     const result = await userCollection.findOne(query);
     res.send(result);
-    // console.log(result);
+    // (result);
   });
 
   app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
@@ -152,15 +152,19 @@ async function run() {
     res.send(result);
   });
 
-  app.delete("/users/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
-    const result = await userCollection.deleteOne(query);
-    res.send(result);
-  });
+  app.delete("/users/:id",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
+      res.send(result);
+    }
+  );
 
   // scholarship api
-  app.get("/scholarships", verifyFirebaseToken, async (req, res) => {
+  app.get("/scholarships", async (req, res) => {
     const searchText = req.query.searchText;
     const {
       email,
@@ -260,36 +264,48 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/scholarships/:id", verifyFirebaseToken, async (req, res) => {
+  app.get("/scholarships/:id", async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     const result = await scholarshipsCollection.findOne(query);
     res.send(result);
   });
 
-  app.post("/scholarships", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-    const scholarship = req.body;
-    scholarship.createdAt = new Date();
-    scholarship.scholarshipPostDate = new Date();
-    const result = await scholarshipsCollection.insertOne(scholarship);
-    res.send(result);
-  });
+  app.post("/scholarships",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const scholarship = req.body;
+      scholarship.createdAt = new Date();
+      scholarship.scholarshipPostDate = new Date();
+      const result = await scholarshipsCollection.insertOne(scholarship);
+      res.send(result);
+    }
+  );
 
-  app.patch("/scholarships/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-    const id = req.params.id;
-    const scholarship = req.body;
-    const query = { _id: new ObjectId(id) };
-    const updateDoc = { $set: scholarship };
-    const result = await scholarshipsCollection.updateOne(query, updateDoc);
-    res.send(result);
-  });
+  app.patch("/scholarships/:id",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const id = req.params.id;
+      const scholarship = req.body;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = { $set: scholarship };
+      const result = await scholarshipsCollection.updateOne(query, updateDoc);
+      res.send(result);
+    }
+  );
 
-  app.delete("/scholarships/:id", verifyFirebaseToken, verifyAdmin, async (req, res) => {
-    const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
-    const result = await scholarshipsCollection.deleteOne(query);
-    res.send(result);
-  });
+  app.delete("/scholarships/:id",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await scholarshipsCollection.deleteOne(query);
+      res.send(result);
+    }
+  );
 
   app.post("/apply-scholarships", verifyFirebaseToken, async (req, res) => {
     const applicationData = req.body;
@@ -303,7 +319,9 @@ async function run() {
     const result = await applicationsCollection.find().toArray();
     res.send(result);
   });
-  app.get("/applied-scholarships/:email", verifyFirebaseToken,
+  app.get(
+    "/applied-scholarships/:email",
+    verifyFirebaseToken,
     async (req, res) => {
       const email = req.params.email;
       if (req.decoded_email !== email) {
@@ -318,7 +336,7 @@ async function run() {
   // scholarship payment checkout API
   app.post("/scholarship-payment-checkout", async (req, res) => {
     const paymentInfo = req.body;
-    console.log(paymentInfo);
+    paymentInfo;
 
     const payment = parseInt(paymentInfo.charge) * 100;
     const session = await stripe.checkout.sessions.create({
@@ -345,13 +363,13 @@ async function run() {
       success_url: `${process.env.SITE_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.SITE_URL}/payment-cancelled`,
     });
-    console.log(session);
+    session;
     res.send({ url: session.url });
   });
   app.patch("/payment-success", async (req, res) => {
     const sessionId = req.query.session_id;
     const session = await stripe.checkout.sessions.retrieve(sessionId);
-    // console.log('session retrieve', session);
+    // ('session retrieve', session);
 
     const transactionId = session.payment_intent;
     const query = {
@@ -385,7 +403,7 @@ async function run() {
       };
       const resultPayment = await paymentCollection.insertOne(payment);
 
-      //   console.log(resultPayment);
+      //   (resultPayment);
       return res.send({
         success: true,
         result,
@@ -398,7 +416,7 @@ async function run() {
 
   app.get("/payments", verifyFirebaseToken, async (req, res) => {
     const email = req.query.email;
-    // console.log('headers',req.headers);
+    // ('headers',req.headers);
     const query = {};
 
     if (email) {
@@ -477,10 +495,12 @@ async function run() {
           },
         ])
         .toArray();
-      const formatted = result.map(item => ({ name: item._id || 'Unknown', value: item.count }));
+      const formatted = result.map((item) => ({
+        name: item._id || "Unknown",
+        value: item.count,
+      }));
       res.send(formatted);
-      console.log(result);
-
+      result;
     }
   );
 
@@ -543,17 +563,26 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/reviews/scholarship/:scholarshipId", verifyFirebaseToken, async (req, res) => {
-    const scholarshipId = req.params.scholarshipId;
-    const query = { scholarshipId: scholarshipId };
-    const result = await reviewsCollection.find(query).toArray();
-    res.send(result);
-  });
+  app.get(
+    "/reviews/scholarship/:scholarshipId",
+    
+    async (req, res) => {
+      const scholarshipId = req.params.scholarshipId;
+      const query = { scholarshipId: scholarshipId };
+      const result = await reviewsCollection.find(query).toArray();
+      res.send(result);
+    }
+  );
 
-  app.get("/all-reviews", verifyFirebaseToken, verifyModerator, async (req, res) => {
-    const result = await reviewsCollection.find().toArray();
-    res.send(result);
-  });
+  app.get(
+    "/all-reviews",
+    verifyFirebaseToken,
+    verifyModerator,
+    async (req, res) => {
+      const result = await reviewsCollection.find().toArray();
+      res.send(result);
+    }
+  );
 
   app.delete("/reviews/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
@@ -578,7 +607,7 @@ async function run() {
 
   //   // Send a ping to confirm a successful connection
   //   await client.db("admin").command({ ping: 1 });
-  //   console.log("Pinged your deployment. You successfully connected to MongoDB!");
+  //   ("Pinged your deployment. You successfully connected to MongoDB!");
 }
 run().catch(console.dir);
 
@@ -587,5 +616,5 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log("port running on", port);
+  "port running on", port;
 });
