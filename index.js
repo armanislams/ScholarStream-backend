@@ -26,7 +26,7 @@ app.use(cors());
 function generateUserId() {
   const prefix = "SS";
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); //YYYYMMDD
-  const random = crypto.randomBytes(1).toString("hex").toUpperCase(); //6-char random hex
+  const random = crypto.randomBytes(1).toString("hex").toUpperCase(); //2-char random hex
   return `${prefix}-${date}-${random}`;
 }
 
@@ -70,6 +70,9 @@ async function run() {
   const paymentCollection = db.collection("payments");
   const reviewsCollection = db.collection("reviews");
 
+  // generatedUserId
+  const generatedUserId = generateUserId();
+
   //verify user roles
   const verifyAdmin = async (req, res, next) => {
     const allowedRoles = ["admin", "super-admin"];
@@ -95,10 +98,11 @@ async function run() {
   };
 
   ///users
-  app.post("/users", async (req, res) => {
+  app.post("/users",verifyFirebaseToken, async (req, res) => {
     const user = req.body;
     user.role = "student";
     user.createdAt = new Date();
+    user.userId = generatedUserId;
     const email = user.email;
     const userExist = await userCollection.findOne({ email });
     if (userExist) {
@@ -108,7 +112,7 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/users", async (req, res) => {
+  app.get("/users",verifyFirebaseToken, async (req, res) => {
     const searchText = req.query.searchText;
     const query = {};
     if (searchText) {
@@ -272,11 +276,8 @@ async function run() {
   });
 
   app.post("/scholarships",
-    verifyFirebaseToken,
-    verifyAdmin,
-    async (req, res) => {
+    verifyFirebaseToken, verifyAdmin, async (req, res) => {
       const scholarship = req.body;
-      scholarship.createdAt = new Date();
       scholarship.scholarshipPostDate = new Date();
       const result = await scholarshipsCollection.insertOne(scholarship);
       res.send(result);
@@ -309,8 +310,6 @@ async function run() {
 
   app.post("/apply-scholarships", verifyFirebaseToken, async (req, res) => {
     const applicationData = req.body;
-    const userId = generateUserId();
-    applicationData.userId = userId;
     applicationData.applicationDate = new Date();
     const result = await applicationsCollection.insertOne(applicationData);
     res.send(result);
@@ -319,8 +318,13 @@ async function run() {
     const result = await applicationsCollection.find().toArray();
     res.send(result);
   });
-  app.get(
-    "/applied-scholarships/:email",
+  app.get("/applied-scholarship/:id", verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id
+    const query = {_id: new ObjectId(id)}
+    const result = await applicationsCollection.findOne(query)
+    res.send(result)
+  });
+  app.get("/applied-scholarships/:email",
     verifyFirebaseToken,
     async (req, res) => {
       const email = req.params.email;
@@ -336,7 +340,7 @@ async function run() {
   // scholarship payment checkout API
   app.post("/scholarship-payment-checkout", async (req, res) => {
     const paymentInfo = req.body;
-    paymentInfo;
+    // paymentInfo;
 
     const payment = parseInt(paymentInfo.charge) * 100;
     const session = await stripe.checkout.sessions.create({
