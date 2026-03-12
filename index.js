@@ -9,6 +9,7 @@ const crypto = require("crypto");
 
 ///FIREBASE SERVICE ACCOUNT
 const admin = require("firebase-admin");
+const { log } = require("console");
 const decoded = Buffer.from(process.env.FIREBASE_KEY, "base64").toString(
   "utf8"
 );
@@ -69,6 +70,7 @@ async function run() {
   const applicationsCollection = db.collection("applications");
   const paymentCollection = db.collection("payments");
   const reviewsCollection = db.collection("reviews");
+  const bookmarksCollection = db.collection("bookmarks");
 
   // generatedUserId
   const generatedUserId = generateUserId();
@@ -549,6 +551,40 @@ async function run() {
     res.send(result);
   });
 
+  // Bookmarks
+  app.post("/bookmarks", verifyFirebaseToken, async (req, res) => {
+    const bookmark = req.body;
+    bookmark.createdAt = new Date();
+    // Check if it already exists
+    const exists = await bookmarksCollection.findOne({ 
+      userEmail: bookmark.userEmail, 
+      scholarshipId: bookmark.scholarshipId 
+    });
+    if (exists) {
+      return res.status(400).send({ message: "Already bookmarked" });
+    }
+    const result = await bookmarksCollection.insertOne(bookmark);
+    res.send(result);
+  });
+
+  app.get("/bookmarks/:email", verifyFirebaseToken, async (req, res) => {
+    const email = req.params.email;
+    if (req.decoded_email !== email) {
+      return res.status(403).send({ message: "forbidden access" });
+    }
+    const query = { userEmail: email };
+    // Fetch bookmarks and sort by newest
+    const result = await bookmarksCollection.find(query).sort({ createdAt: -1 }).toArray();
+    res.send(result);
+  });
+
+  app.delete("/bookmarks/:id", verifyFirebaseToken, async (req, res) => {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await bookmarksCollection.deleteOne(query);
+    res.send(result);
+  });
+
   // Reviews
   app.post("/reviews", verifyFirebaseToken, async (req, res) => {
     const review = req.body;
@@ -610,8 +646,8 @@ async function run() {
   });
 
   //   // Send a ping to confirm a successful connection
-  //   await client.db("admin").command({ ping: 1 });
-  //   ("Pinged your deployment. You successfully connected to MongoDB!");
+    await client.db("admin").command({ ping: 1 });
+    ("Pinged your deployment. You successfully connected to MongoDB!");
 }
 run().catch(console.dir);
 
@@ -620,5 +656,6 @@ app.get("/", (req, res) => {
 });
 
 app.listen(port, () => {
-  "port running on", port;
+  console.log("port running on", port);
+   
 });
