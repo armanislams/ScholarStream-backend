@@ -21,7 +21,25 @@ admin.initializeApp({
 
 //middleware
 app.use(express.json());
-app.use(cors());
+
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  process.env.Live_url,
+];
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  }),
+);
 
 //userID
 function generateUserId() {
