@@ -165,8 +165,12 @@ async function run() {
       const requester = await userCollection.findOne({
         email: req.decoded_email,
       });
-      const allowed = ["admin", "moderator", "super-admin"];
-      if (!requester || !allowed.includes(requester.role)) {
+    //   const allowed = ["admin", "moderator", "super-admin"];
+    //   if (!requester || !allowed.includes(requester.role)) {
+    //     return res.status(403).send({ message: "Forbidden access" });
+    //   }
+      // }
+      if (!requester) {
         return res.status(403).send({ message: "Forbidden access" });
       }
     }
