@@ -22,6 +22,7 @@ The backend serves as the centralized logic hub for ScholarStream, ensuring secu
 ### 📝 Application System
 - **Submission Handling**: Processes student applications.
 - **Status Tracking**: Updates application statuses (pending, processing, completed, rejected).
+ - **Student Application History**: Endpoints to fetch all applications by user email with proper authorization.
 
 ### 💳 Payments
 - **Stripe Integration**: Secure checkout sessions for application fees.
@@ -30,6 +31,7 @@ The backend serves as the centralized logic hub for ScholarStream, ensuring secu
 ### 📊 Analytics
 - **Admin Dashboard**: Aggregated stats on users, funds, and applications.
 - **Moderator Views**: monitoring application flows.
+ - **Category-wise Application Insights**: Aggregated chart data grouped by scholarship category for admin dashboard visualizations.
 
 ## 🛠️ Technology Stack
 
@@ -98,3 +100,11 @@ The backend serves as the centralized logic hub for ScholarStream, ensuring secu
 | `GET` | `/scholarships` | Get all scholarships with filters |
 | `POST` | `/scholarship-payment-checkout` | Create Stripe payment session |
 | `GET` | `/analytics/admin-stats` | Get admin dashboard stats |
+| `GET` | `/applied-scholarships/:email` | Get all applications for a specific student (protected, email must match token). |
+| `GET` | `/applications` | Get all scholarship applications (protected). |
+| `PATCH` | `/applications/:id` | Update application fields such as status or feedback (protected). |
+| `DELETE` | `/applications/:id` | Delete an application (protected). |
+| `GET` | `/applications/export` | Export all applications as CSV (Admin & Super Admin only). |
+| `POST` | `/bookmarks` | Create a bookmark for a scholarship (protected). |
+| `GET` | `/bookmarks/:email` | Get all bookmarks for a specific user (protected). |
+| `DELETE` | `/bookmarks/:id` | Remove a bookmark (protected). |
