@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require("cors");
-const app = express();
 require("dotenv").config();
+const app = express();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
@@ -365,7 +365,7 @@ async function run() {
     res.send(result);
   });
   app.get("/applications", verifyFirebaseToken, async (req, res) => {
-    const result = await applicationsCollection.find().toArray();
+    const result = await applicationsCollection.find().sort({applicationDate: -1}).toArray();
     res.send(result);
   });
   app.get(
@@ -768,5 +768,4 @@ app.get("/", (req, res) => {
 
 app.listen(port, () => {
   console.log("port running on", port);
-   
 });
