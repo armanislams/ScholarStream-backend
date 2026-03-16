@@ -163,6 +163,35 @@ async function run() {
     res.send({ role: user?.role || "user" });
   });
 
+  app.patch("/users/:email", verifyFirebaseToken, async (req, res) => {
+    const email = req.params.email;
+    if (req.decoded_email !== email) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+
+    const { bio, degree, gpa, displayName, photoURL } = req.body;
+    const updateFields = {};
+    if (bio !== undefined) updateFields.bio = bio;
+    if (degree !== undefined) updateFields.degree = degree;
+    if (gpa !== undefined) updateFields.gpa = gpa;
+    if (displayName !== undefined) updateFields.displayName = displayName;
+    if (photoURL !== undefined) updateFields.photoURL = photoURL;
+
+    if (Object.keys(updateFields).length === 0) {
+      return res.status(400).send({ message: "Nothing to update" });
+    }
+
+    const query = { email };
+    const updateDoc = { $set: updateFields };
+    const result = await userCollection.updateOne(query, updateDoc);
+
+    if (result.matchedCount === 0) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    res.send({ success: true, modifiedCount: result.modifiedCount });
+  });
+
   app.patch("/users/:id/role", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
     const roleInfo = req.body;
@@ -175,6 +204,7 @@ async function run() {
     const result = await userCollection.updateOne(query, updateDoc);
     res.send(result);
   });
+  
 
   app.delete("/users/:id",
     verifyFirebaseToken,
@@ -338,6 +368,69 @@ async function run() {
     const result = await applicationsCollection.find().toArray();
     res.send(result);
   });
+  app.get(
+    "/applications/export",
+    verifyFirebaseToken,
+    verifyAdmin,
+    async (req, res) => {
+      const applications = await applicationsCollection.find().toArray();
+
+      const headers = [
+        "Applicant Name",
+        "Applicant Email",
+        "University Name",
+        "Scholarship Category",
+        "Subject Category",
+        "Degree",
+        "Application Status",
+        "Payment Status",
+        "Application Fees",
+        "Application Date",
+      ];
+
+      const escapeCsv = (value) => {
+        if (value === null || value === undefined) return "";
+        const stringValue = String(value);
+        if (stringValue.includes('"')) {
+          return `"${stringValue.replace(/"/g, '""')}"`;
+        }
+        if (stringValue.includes(",") || stringValue.includes("\n")) {
+          return `"${stringValue}"`;
+        }
+        return stringValue;
+      };
+
+      const rows = applications.map((app) => [
+        escapeCsv(app.userName),
+        escapeCsv(app.userEmail),
+        escapeCsv(app.universityName),
+        escapeCsv(app.scholarshipCategory),
+        escapeCsv(app.subjectCategory),
+        escapeCsv(app.degree),
+        escapeCsv(app.applicationStatus || "pending"),
+        escapeCsv(app.paymentStatus || "unpaid"),
+        escapeCsv(app.applicationFees),
+        escapeCsv(
+          app.applicationDate
+            ? new Date(app.applicationDate).toISOString()
+            : "",
+        ),
+      ]);
+
+      const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join(
+        "\n",
+      );
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="applications-export-${new Date()
+          .toISOString()
+          .slice(0, 10)}.csv"`,
+      );
+      res.send(csvContent);
+    },
+  );
   app.get("/applied-scholarship/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id
     const query = {_id: new ObjectId(id)}
