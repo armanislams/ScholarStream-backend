@@ -719,8 +719,18 @@ async function run() {
   );
 
   // Application Management
-  app.delete("/applications/:id", verifyFirebaseToken,verifyModerator, async (req, res) => {
+  app.delete("/applications/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
+    const { email } = req.body.email
+    if (req.decoded_email !== email) {
+      const requester = await userCollection.findOne({
+        email: req.decoded_email,
+      });
+      const allowed = ["admin", "moderator", "super-admin"];
+      if (!requester && !allowed.includes(requester.role)) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+    }
     const query = { _id: new ObjectId(id) };
     const result = await applicationsCollection.deleteOne(query);
     res.send(result);
@@ -813,10 +823,20 @@ async function run() {
 
   app.delete("/reviews/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-    const query = { _id: new ObjectId(id), userEmail: req.decoded_email };
+    const {email} = req.body.email
+    if (req.decoded_email !== email) {
+      const requester = await userCollection.findOne({
+        email: req.decoded_email,
+      });
+      const allowed = ["admin", "moderator", "super-admin"];
+      if (!requester || !allowed.includes(requester.role)) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+    }
+    const query = { _id: new ObjectId(id) };
     const result = await reviewsCollection.deleteOne(query);
     if (result.deletedCount === 0) {
-      return res.status(404).send({ message: "Review not found" });
+      return res.status(404).send({ message: "Review not found", result });
     }
     res.send(result);
   });
