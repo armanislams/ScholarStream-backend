@@ -116,6 +116,17 @@ async function run() {
 
     next();
   };
+  const verifyStudent = async (req, res, next) => {
+    const allowedRoles = ["student"];
+    const email = req.decoded_email;
+    const query = { email };
+    const user = await userCollection.findOne(query);
+    if (!user || !allowedRoles.includes(user.role)) {
+      return res.status(403).send({ message: "Forbidden access" });
+    }
+
+    next();
+  };
 
   ///users
   app.post("/users",verifyFirebaseToken, async (req, res) => {
@@ -132,7 +143,7 @@ async function run() {
     res.send(result);
   });
 
-  app.get("/users",verifyFirebaseToken, async (req, res) => {
+  app.get("/users",verifyFirebaseToken,verifyAdmin, async (req, res) => {
     const searchText = req.query.searchText;
     const query = {};
     if (searchText) {
@@ -150,6 +161,15 @@ async function run() {
 
   app.get("/users/:email", verifyFirebaseToken, async (req, res) => {
     const email = req.params.email;
+    if (req.decoded_email !== email) {
+      const requester = await userCollection.findOne({
+        email: req.decoded_email,
+      });
+      const allowed = ["admin", "moderator", "super-admin"];
+      if (!requester || !allowed.includes(requester.role)) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+    }
     const query = { email };
     const result = await userCollection.findOne(query);
     res.send(result);
@@ -192,7 +212,7 @@ async function run() {
     res.send({ success: true, modifiedCount: result.modifiedCount });
   });
 
-  app.patch("/users/:id/role", verifyFirebaseToken, async (req, res) => {
+  app.patch("/users/:id/role", verifyFirebaseToken,verifyAdmin, async (req, res) => {
     const id = req.params.id;
     const roleInfo = req.body;
     const query = { _id: new ObjectId(id) };
@@ -360,16 +380,18 @@ async function run() {
 
   app.post("/apply-scholarships", verifyFirebaseToken, async (req, res) => {
     const applicationData = req.body;
+    if (applicationData?.userEmail !== req.decoded_email) {
+      return res.status(403).send({ message: "forbidden access" });
+    }
     applicationData.applicationDate = new Date();
     const result = await applicationsCollection.insertOne(applicationData);
     res.send(result);
   });
-  app.get("/applications", verifyFirebaseToken, async (req, res) => {
+  app.get("/applications", verifyFirebaseToken, verifyModerator, async (req, res) => {
     const result = await applicationsCollection.find().sort({applicationDate: -1}).toArray();
     res.send(result);
   });
-  app.get(
-    "/applications/export",
+  app.get("/applications/export",
     verifyFirebaseToken,
     verifyAdmin,
     async (req, res) => {
@@ -432,10 +454,23 @@ async function run() {
     },
   );
   app.get("/applied-scholarship/:id", verifyFirebaseToken, async (req, res) => {
-    const id = req.params.id
-    const query = {_id: new ObjectId(id)}
-    const result = await applicationsCollection.findOne(query)
-    res.send(result)
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+    const result = await applicationsCollection.findOne(query);
+    if (!result) {
+      return res.status(404).send({ message: "Application not found" });
+    }
+
+    // Owner can read; moderators/admins can read all
+    if (result.userEmail !== req.decoded_email) {
+      const requester = await userCollection.findOne({ email: req.decoded_email });
+      const allowed = ["admin", "moderator", "super-admin"];
+      if (!requester || !allowed.includes(requester.role)) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+    }
+
+    res.send(result);
   });
   app.get("/applied-scholarships/:email",
     verifyFirebaseToken,
@@ -451,11 +486,35 @@ async function run() {
   );
 
   // scholarship payment checkout API
-  app.post("/scholarship-payment-checkout", async (req, res) => {
+  app.post("/scholarship-payment-checkout", verifyFirebaseToken, async (req, res) => {
     const paymentInfo = req.body;
-    // paymentInfo;
+    const applicationId = paymentInfo?.applicationId;
+    if (!applicationId) {
+      return res.status(400).send({ message: "applicationId is required" });
+    }
 
-    const payment = parseInt(paymentInfo.charge) * 100;
+    const application = await applicationsCollection.findOne({
+      _id: new ObjectId(applicationId),
+    });
+
+    if (!application) {
+      return res.status(404).send({ message: "Application not found" });
+    }
+
+    if (application.userEmail !== req.decoded_email) {
+      return res.status(403).send({ message: "forbidden access" });
+    }
+
+    if (application.paymentStatus === "paid") {
+      return res.status(400).send({ message: "Application already paid" });
+    }
+
+    const amount = Number(application.applicationFees);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).send({ message: "Invalid application fee amount" });
+    }
+
+    const payment = Math.round(amount * 100);
     const session = await stripe.checkout.sessions.create({
       line_items: [
         {
@@ -464,18 +523,18 @@ async function run() {
             currency: "USD",
             unit_amount: payment,
             product_data: {
-              name: paymentInfo.universityName,
+              name: application.universityName,
             },
           },
           quantity: 1,
         },
       ],
       mode: "payment",
-      customer_email: paymentInfo.studentEmail,
+      customer_email: req.decoded_email,
       metadata: {
-        universityName: paymentInfo.universityName,
-        scholarshipId: paymentInfo.scholarshipId,
-        applicationId: paymentInfo.applicationId,
+        universityName: application.universityName,
+        scholarshipId: application.scholarshipId,
+        applicationId: String(application._id),
       },
       success_url: `${process.env.SITE_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.SITE_URL}/payment-cancelled`,
@@ -483,10 +542,17 @@ async function run() {
     session;
     res.send({ url: session.url });
   });
-  app.patch("/payment-success", async (req, res) => {
+  app.patch("/payment-success", verifyFirebaseToken, async (req, res) => {
     const sessionId = req.query.session_id;
+    if (!sessionId) {
+      return res.status(400).send({ message: "session_id is required" });
+    }
     const session = await stripe.checkout.sessions.retrieve(sessionId);
     // ('session retrieve', session);
+
+    if (session.customer_email !== req.decoded_email) {
+      return res.status(403).send({ message: "forbidden access" });
+    }
 
     const transactionId = session.payment_intent;
     const query = {
@@ -503,6 +569,13 @@ async function run() {
     if (session.payment_status === "paid") {
       const applicationId = session.metadata.applicationId;
       const query = { _id: new ObjectId(applicationId) };
+      const appDoc = await applicationsCollection.findOne(query);
+      if (!appDoc) {
+        return res.status(404).send({ message: "Application not found" });
+      }
+      if (appDoc.userEmail !== req.decoded_email) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
       const update = {
         $set: {
           paymentStatus: "paid",
@@ -542,15 +615,20 @@ async function run() {
       if (email !== req.decoded_email) {
         return res.status(403).send({ message: "forbidden access" });
       }
+    } else {
+      // Only admins can view all payments
+      const requester = await userCollection.findOne({ email: req.decoded_email });
+      const allowed = ["admin", "super-admin"];
+      if (!requester || !allowed.includes(requester.role)) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
     }
     const options = { sort: { paidAt: -1 } };
-    const cursor = paymentCollection.find();
-    const result = await cursor.toArray();
+    const result = await paymentCollection.find(query, options).toArray();
     res.send(result);
   });
   // Analytics
-  app.get(
-    "/analytics/admin-stats",
+  app.get("/analytics/admin-stats",
     verifyFirebaseToken,
     verifyAdmin,
     async (req, res) => {
@@ -566,8 +644,7 @@ async function run() {
     }
   );
 
-  app.get(
-    "/analytics/student-stats/:email",
+  app.get("/analytics/student-stats/:email",
     verifyFirebaseToken,
     async (req, res) => {
       const email = req.params.email;
@@ -597,8 +674,7 @@ async function run() {
     }
   );
 
-  app.get(
-    "/analytics/chart-data",
+  app.get("/analytics/chart-data",
     verifyFirebaseToken,
     verifyAdmin,
     async (req, res) => {
@@ -621,8 +697,7 @@ async function run() {
     }
   );
 
-  app.get(
-    "/analytics/moderator-stats",
+  app.get("/analytics/moderator-stats",
     verifyFirebaseToken,
     verifyModerator,
     async (req, res) => {
@@ -644,14 +719,14 @@ async function run() {
   );
 
   // Application Management
-  app.delete("/applications/:id", verifyFirebaseToken, async (req, res) => {
+  app.delete("/applications/:id", verifyFirebaseToken,verifyModerator, async (req, res) => {
     const id = req.params.id;
     const query = { _id: new ObjectId(id) };
     const result = await applicationsCollection.deleteOne(query);
     res.send(result);
   });
 
-  app.patch("/applications/:id", verifyFirebaseToken, async (req, res) => {
+  app.patch("/applications/:id", verifyFirebaseToken,verifyModerator, async (req, res) => {
     const id = req.params.id;
     const data = req.body;
     const query = { _id: new ObjectId(id) };
@@ -691,8 +766,11 @@ async function run() {
 
   app.delete("/bookmarks/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
+    const query = { _id: new ObjectId(id), userEmail: req.decoded_email };
     const result = await bookmarksCollection.deleteOne(query);
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Bookmark not found" });
+    }
     res.send(result);
   });
 
@@ -714,8 +792,7 @@ async function run() {
     res.send(result);
   });
 
-  app.get(
-    "/reviews/scholarship/:scholarshipId",
+  app.get("/reviews/scholarship/:scholarshipId",
     
     async (req, res) => {
       const scholarshipId = req.params.scholarshipId;
@@ -725,8 +802,7 @@ async function run() {
     }
   );
 
-  app.get(
-    "/all-reviews",
+  app.get("/all-reviews",
     verifyFirebaseToken,
     verifyModerator,
     async (req, res) => {
@@ -737,8 +813,11 @@ async function run() {
 
   app.delete("/reviews/:id", verifyFirebaseToken, async (req, res) => {
     const id = req.params.id;
-    const query = { _id: new ObjectId(id) };
+    const query = { _id: new ObjectId(id), userEmail: req.decoded_email };
     const result = await reviewsCollection.deleteOne(query);
+    if (result.deletedCount === 0) {
+      return res.status(404).send({ message: "Review not found" });
+    }
     res.send(result);
   });
 
