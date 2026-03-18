@@ -45,7 +45,7 @@ app.use(
 function generateUserId() {
   const prefix = "SS";
   const date = new Date().toISOString().slice(0, 10).replace(/-/g, ""); //YYYYMMDD
-  const random = crypto.randomBytes(1).toString("hex").toUpperCase(); //2-char random hex
+  const random = crypto.randomBytes(2).toString("hex").toUpperCase(); //2-char random hex
   return `${prefix}-${date}-${random}`;
 }
 
@@ -62,8 +62,7 @@ const verifyFirebaseToken = async (req, res, next) => {
     req.decoded_email = decoded.email;
     next();
   } catch (err) {
-    err;
-
+    console.log(err);
     return res.status(401).send({ message: "unauthorized access" });
   }
 };
@@ -165,11 +164,6 @@ async function run() {
       const requester = await userCollection.findOne({
         email: req.decoded_email,
       });
-    //   const allowed = ["admin", "moderator", "super-admin"];
-    //   if (!requester || !allowed.includes(requester.role)) {
-    //     return res.status(403).send({ message: "Forbidden access" });
-    //   }
-      // }
       if (!requester) {
         return res.status(403).send({ message: "Forbidden access" });
       }
@@ -177,8 +171,7 @@ async function run() {
     const query = { email };
     const result = await userCollection.findOne(query);
     res.send(result);
-    // (result);
-  });
+    });
 
   app.get("/users/:email/role", verifyFirebaseToken, async (req, res) => {
     const email = req.params.email;
